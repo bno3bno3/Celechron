@@ -112,8 +112,10 @@ class Zdbk {
               "https://zdbk.zju.edu.cn/jwglxt/zycjtj/xszgkc_cxXsZgkcIndex.html?doType=query&queryModel.showCount=5000"))
           .timeout(const Duration(seconds: 8),
               onTimeout: () => throw ExceptionWithMessage("请求超时"));
-      // 【关键修改】添加 Referer
+      // 添加 Referer
       request.headers.add("Referer", "https://zdbk.zju.edu.cn/jwglxt/xtgl/index_initMenu.html");
+      // 禁用 Keep-Alive
+      request.headers.set('Connection', 'close');
       request.cookies.add(_jSessionId!);
       request.cookies.add(_route!);
       request.followRedirects = false;
@@ -174,8 +176,9 @@ class Zdbk {
               "https://zdbk.zju.edu.cn/jwglxt/cxdy/xscjcx_cxXscjIndex.html?doType=query&queryModel.showCount=5000"))
           .timeout(const Duration(seconds: 8),
               onTimeout: () => throw ExceptionWithMessage("请求超时"));
-      // 【关键修改】添加 Referer
+      // 添加 Referer
       request.headers.add("Referer", "https://zdbk.zju.edu.cn/jwglxt/xtgl/index_initMenu.html");
+      request.headers.set('Connection', 'close'); // 新增此行
       request.cookies.add(_jSessionId!);
       request.cookies.add(_route!);
       request.followRedirects = false;
@@ -224,8 +227,9 @@ class Zdbk {
                 "https://zdbk.zju.edu.cn/jwglxt/kbcx/xskbcx_cxXsKb.html"))
             .timeout(const Duration(seconds: 8),
                 onTimeout: () => throw ExceptionWithMessage("请求超时"));
-        // 【关键修改】添加 Referer
+        // 添加 Referer
         request.headers.add("Referer", "https://zdbk.zju.edu.cn/jwglxt/xtgl/index_initMenu.html");
+        request.headers.set('Connection', 'close'); // 新增此行
         request.cookies.add(_jSessionId!);
         request.cookies.add(_route!);
         request.headers.contentType = ContentType(
@@ -301,8 +305,9 @@ class Zdbk {
               "https://zdbk.zju.edu.cn/jwglxt/xskscx/kscx_cxXsgrksIndex.html?doType=query&queryModel.showCount=5000"))
           .timeout(const Duration(seconds: 8),
               onTimeout: () => throw ExceptionWithMessage("请求超时"));
-      // 【关键修改】添加 Referer
+      // 添加 Referer
       request.headers.add("Referer", "https://zdbk.zju.edu.cn/jwglxt/xtgl/index_initMenu.html");
+      request.headers.set('Connection', 'close'); // 新增此行
       request.cookies.add(_jSessionId!);
       request.cookies.add(_route!);
       request.followRedirects = false;
@@ -349,8 +354,9 @@ class Zdbk {
               "https://zdbk.zju.edu.cn/jwglxt/dessktgl/dessktcx_cxDessktcxIndex.html?gnmkdm=N108001&layout=default&su=$studentId"))
           .timeout(const Duration(seconds: 8),
               onTimeout: () => throw ExceptionWithMessage("请求超时"));
-      // 【关键修改】添加 Referer
+      // 添加 Referer
       request.headers.add("Referer", "https://zdbk.zju.edu.cn/jwglxt/xtgl/index_initMenu.html");
+      request.headers.set('Connection', 'close'); // 新增此行
       request.cookies.add(_jSessionId!);
       request.cookies.add(_route!);
       request.followRedirects = false;

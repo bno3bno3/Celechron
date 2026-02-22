@@ -16,11 +16,16 @@ class TimeConfigService {
   Future<Tuple<Exception?, String?>> getConfig(
       HttpClient httpClient, String semesterId) async {
     try {
-      var response = await httpClient
+      var request = await httpClient
           .getUrl(Uri.parse('http://calendar.celechron.top/$semesterId.json'))
-          .then((request) => request.close())
           .timeout(const Duration(seconds: 8),
               onTimeout: () => throw ExceptionWithMessage("请求超时"));
+      
+      // 禁用 Keep-Alive，防止连接被服务端意外切断
+      request.headers.set('Connection', 'close');
+      
+      var response = await request.close().timeout(const Duration(seconds: 8),
+          onTimeout: () => throw ExceptionWithMessage("请求超时"));
 
       if (response.statusCode == 200) {
         var config = await response.transform(utf8.decoder).join();
