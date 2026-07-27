@@ -75,11 +75,11 @@ class Scholar {
 
   Semester get thisSemester {
     if (semesters.length > 1) {
-      if (semesters[1]
-          .periods
-          .last
-          .endTime
-          .isAfter(DateTime.now().subtract(const Duration(days: 14)))) {
+      // 只有成绩、没有课表和考试的学期 periods 为空，直接取 .last 会抛异常
+      var prevSemesterPeriods = semesters[1].periods;
+      if (prevSemesterPeriods.isNotEmpty &&
+          prevSemesterPeriods.last.endTime
+              .isAfter(DateTime.now().subtract(const Duration(days: 14)))) {
         return semesters[1];
       } else {
         return semesters[0];
@@ -162,6 +162,15 @@ class Scholar {
     }
     _mutex++;
     try {
+      // Spider 会话不可持久化：切换账号等场景下从数据库恢复的 Scholar 只有
+      // isLogan 标记和凭据，须在此重建会话。放互斥段内，并发刷新只登录一次；
+      // 登录失败则以登录错误结束本次刷新，保留本地缓存数据
+      if (_spider == null) {
+        var loginErrorMessages = await login();
+        if (loginErrorMessages.any((e) => e != null)) {
+          return loginErrorMessages;
+        }
+      }
       // 异步刷新：每完成一部分抓取就先合并进内存并通知界面，
       // 全部完成后仍会走下面的完整合并（含实践学分、时间戳、持久化与报错）
       var useAsyncRefresh =
