@@ -52,10 +52,13 @@ abstract class Spider {
   /// 顶层抓取任务的标签序列，与 getEverything 返回值的抓取错误列表下标一一对应
   List<String> get fetchLabels;
 
+  /// 在会话未初始化或过期时先登录，再抓取数据。
+  /// allowUserInteraction：仅手动刷新允许弹出验证码等交互。
   /// onProgress：异步刷新用。每完成一个顶层抓取任务，就带着当前已累积的数据回调一次；
   /// 传 null 则行为与原来完全一致。
   Future<EverythingTuple> getEverything(
-      {void Function(EverythingTuple partial)? onProgress}) async {
+      {bool allowUserInteraction = false,
+      void Function(EverythingTuple partial)? onProgress}) async {
     throw UnimplementedError();
   }
 }

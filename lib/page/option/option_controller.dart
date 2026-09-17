@@ -16,7 +16,6 @@ import 'package:celechron/worker/ecard_widget_messenger.dart';
 import 'package:celechron/worker/fuse.dart';
 import 'package:celechron/worker/background_app_refresh.dart';
 import 'package:celechron/utils/platform_features.dart';
-import 'package:celechron/utils/global.dart';
 import 'package:celechron/model/calendar_to_system.dart';
 import 'package:celechron/model/calendar_to_ical.dart';
 
@@ -484,14 +483,12 @@ class OptionController extends GetxController {
   }
 
   Future<void> _refreshAccountScholar(Scholar s) async {
-    GlobalStatus.isFirstScreenReq = true;
     try {
       await s.refresh(onPartialUpdate: scholar.refresh);
       await _calendarManager.resyncSilently();
     } on Object {
       // 账号切换/添加后的自动刷新异常结束：界面已展示缓存数据，静默忽略
     } finally {
-      GlobalStatus.isFirstScreenReq = false;
       scholar.refresh();
     }
   }

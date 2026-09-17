@@ -70,7 +70,7 @@ class ScholarController extends GetxController {
     '研究生课考试': '研究生考试获取失败',
     '研究生课成绩': '研究生成绩获取失败',
   };
-  // 拿不到任何真实进度（如启动自动刷新占用互斥锁）时的兜底轮播
+  // 暂无模块进度时的兜底轮播
   static const List<String> _genericCarousel = [
     '正在同步教务数据...',
     '正在等待服务器响应...',
@@ -159,14 +159,14 @@ class ScholarController extends GetxController {
   }
 
   Future<List<String?>> fetchData() async {
-    // scholar.refresh 内部有互斥，并发的后来者只会空等并返回 []；
-    // 这里计数以保证最后一个调用结束时才收起状态文案
+    // 并发调用共享最终结果，最后一个调用结束时才收起状态文案。
     _activeFetchCount++;
     if (_activeFetchCount == 1) _startStatusFeed();
     try {
       // 异步刷新开启时，每合并一部分数据就刷新界面和“更新于”时长
       return await _scholar.value
           .refresh(
+              userInitiated: true,
               onPartialUpdate: () {
                 _scholar.refresh();
                 _updateDurations();
@@ -203,6 +203,18 @@ class ScholarController extends GetxController {
 
   void _onFetchStatus(List<ModuleFetchStatus> statuses) {
     if (_statusTimer == null) return; // 刷新已结束的迟到回调，忽略
+    if (statuses.isNotEmpty &&
+        statuses.every((s) => s.state == FetchModuleState.pending) &&
+        _statuses.any((s) => s.state != FetchModuleState.pending)) {
+      // 补刷开始：清掉上一轮尚未播报的成功/失败文案，保留加载计时。
+      _seenStates.clear();
+      _announcements.clear();
+      _rotation = 0;
+      if (_statusTick >= _statusFirstShowTick) {
+        final label = statuses.first.label;
+        refreshStatusMessage.value = _progressCopy[label] ?? '正在获取$label...';
+      }
+    }
     _statuses = statuses;
     // 文案展示开始前就完成的模块不追溯播报
     var announce = _statusTick >= _statusFirstShowTick;

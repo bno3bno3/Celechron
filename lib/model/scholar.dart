@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 
 import 'package:celechron/page/option/option_controller.dart';
@@ -12,8 +14,11 @@ import 'package:celechron/http/ugrs_spider.dart';
 import 'package:celechron/http/grs_spider.dart';
 import 'package:celechron/database/database_helper.dart';
 
+typedef SpiderFactory = Spider Function(String username, String password);
+
 class Scholar {
-  Scholar();
+  Scholar({SpiderFactory? spiderFactory})
+      : _spiderFactory = spiderFactory ?? _createSpider;
 
   // 构造用户对象
   DatabaseHelper? _db;
@@ -32,6 +37,14 @@ class Scholar {
   String? username;
   String? password;
   Spider? _spider;
+  final SpiderFactory _spiderFactory;
+
+  static Spider _createSpider(String username, String password) {
+    if (username == '3200000000') return MockSpider();
+    return username.startsWith('3')
+        ? UgrsSpider(username, password)
+        : GrsSpider(username, password);
+  }
 
   bool get isGrs => !username!.startsWith('3');
 
@@ -106,13 +119,7 @@ class Scholar {
     if (username == null || password == null) {
       return ["未登录"];
     }
-    if (username == '3200000000') {
-      _spider = MockSpider();
-    } else if (!isGrs) {
-      _spider = UgrsSpider(username!, password!);
-    } else {
-      _spider = GrsSpider(username!, password!);
-    }
+    _spider = _spiderFactory(username!, password!);
     var loginErrorMessage = await _spider!.login();
     if (loginErrorMessage.every((e) => e == null)) {
       isLogan = true;
@@ -144,113 +151,162 @@ class Scholar {
     return true;
   }
 
-  // 刷新数据
-  var _mutex = 0;
+  // 登录、抓取和必要的手动补刷共用一个任务，后来者订阅进度并等待同一结果。
+  _ScholarRefreshTask? _refreshTask;
 
   Future<List<String?>> refresh(
-      {void Function()? onPartialUpdate,
-      void Function(List<ModuleFetchStatus> statuses)? onFetchStatus}) async {
+      {bool userInitiated = false,
+      void Function()? onPartialUpdate,
+      void Function(List<ModuleFetchStatus> statuses)? onFetchStatus}) {
     if (!isLogan) {
-      return ["未登录"];
+      return Future.value(["未登录"]);
     }
-    if (_mutex > 0) {
-      // Wait until the mutex is released.
-      while (_mutex > 0) {
-        await Future.delayed(const Duration(milliseconds: 100));
+
+    final current = _refreshTask;
+    final task = current ?? _ScholarRefreshTask(userInitiated);
+    _refreshTask = task;
+    if (userInitiated) task.manualRefreshRequested = true;
+    _subscribeToRefresh(task, onPartialUpdate, onFetchStatus);
+    if (current == null) {
+      unawaited(_runRefresh(task));
+    }
+    return task.completer.future;
+  }
+
+  void _subscribeToRefresh(
+      _ScholarRefreshTask task,
+      void Function()? onPartialUpdate,
+      void Function(List<ModuleFetchStatus>)? onFetchStatus) {
+    if (onPartialUpdate != null) {
+      task.partialUpdateListeners.add(onPartialUpdate);
+      if (task.latestPartial != null && task.asyncRefresh) {
+        if (task.partialApplied) {
+          _notifyRefreshListener(onPartialUpdate);
+        } else {
+          _applyPartialRefresh(task);
+        }
       }
-      return [];
     }
-    _mutex++;
+    if (onFetchStatus != null) {
+      task.statusListeners.add(onFetchStatus);
+      if (task.statuses.isNotEmpty) {
+        _notifyRefreshListener(() => onFetchStatus(task.statuses));
+      }
+    }
+  }
+
+  Future<void> _runRefresh(_ScholarRefreshTask task) async {
     try {
-      // Spider 会话不可持久化：切换账号等场景下从数据库恢复的 Scholar 只有
-      // isLogan 标记和凭据，须在此重建会话。放互斥段内，并发刷新只登录一次；
-      // 登录失败则以登录错误结束本次刷新，保留本地缓存数据
-      if (_spider == null) {
-        var loginErrorMessages = await login();
-        if (loginErrorMessages.any((e) => e != null)) {
-          return loginErrorMessages;
-        }
+      var errors = await _refreshOnce(task, userInitiated: task.startedByUser);
+      // 手动下拉加入自动任务后，仅在自动任务失败时追加一轮完整刷新。
+      // 不循环重试，补刷期间再加入的调用也只等待这一轮。
+      if (!task.startedByUser &&
+          task.manualRefreshRequested &&
+          errors.any((e) => e != null)) {
+        errors = await _refreshOnce(task, userInitiated: true);
       }
-      // 异步刷新：每完成一部分抓取就先合并进内存并通知界面，
-      // 全部完成后仍会走下面的完整合并（含实践学分、时间戳、持久化与报错）
-      var useAsyncRefresh =
-          onPartialUpdate != null && (_db?.getAsyncRefresh() ?? false);
-      // 刷新状态文案：与数据合并解耦，只要有人监听就照常上报各模块进度，
-      // 不受异步刷新开关影响；后台刷新两个回调都不传，行为与原来完全一致
-      var fetchLabels = _spider?.fetchLabels ?? const <String>[];
-      void emitStatuses(List<String?> fetchErrors) {
-        if (onFetchStatus == null || fetchLabels.isEmpty) return;
-        try {
-          var statuses = moduleStatusesFromErrors(fetchErrors, fetchLabels);
-          if (statuses.isNotEmpty) onFetchStatus(statuses);
-        } catch (e) {
-          // 状态上报失败不影响刷新本身
-          // ignore: avoid_print
-          print('fetch status error: $e');
-        }
-      }
-
-      // 起始状态：全部「进行中」（覆盖登录阶段，此时尚无任何任务完成回调）
-      if (onFetchStatus != null && fetchLabels.isNotEmpty) {
-        onFetchStatus([
-          for (var label in fetchLabels)
-            ModuleFetchStatus(label, FetchModuleState.pending)
-        ]);
-      }
-      var wantProgress = useAsyncRefresh || onFetchStatus != null;
-      return await _spider
-              ?.getEverything(
-                  onProgress: wantProgress
-                      ? (partial) {
-                          if (useAsyncRefresh) {
-                            try {
-                              _applyFetchResult(partial, partial: true);
-                              // 已成功板块立即打上“更新于”时间戳；
-                              // 未完成/失败的板块被 updateLastUpdateTime 的
-                              // 关键字守卫（“查询进行中”/“查询出错”）拦下
-                              if (partial.item1.every((e) => e == null)) {
-                                updateLastUpdateTime(partial.item2);
-                              }
-                              onPartialUpdate();
-                            } catch (e) {
-                              // 中间态合并失败不影响整体刷新，最终合并会兜底
-                              // ignore: avoid_print
-                              print('partial refresh error: $e');
-                            }
-                          }
-                          emitStatuses(partial.item2);
-                        }
-                      : null)
-              .then((value) async {
-            for (var e in value.item1) {
-              // ignore: avoid_print
-              if (e != null) print(e);
-            }
-            for (var e in value.item2) {
-              // ignore: avoid_print
-              if (e != null) print(e);
-            }
-            if (value.item1.every((e) => e == null)) {
-              updateLastUpdateTime(value.item2);
-            }
-            _applyFetchResult(value);
-
-            // 终态补发：最后完成的模块不会触发 onProgress，只能在这里定论
-            emitStatuses(value.item2);
-
-            await _db?.setScholar(this);
-            return value.item1.every((e) => e == null)
-                ? value.item2
-                : value.item1;
-          }) ??
-          ['未登录'];
-    } catch (e) {
-      // 网络异常等情况下保留已有数据，不清空
-      // ignore: avoid_print
-      print('refresh error: $e');
-      return ['网络连接失败，请检查网络后重试'];
+      task.completer.complete(errors);
+    } catch (_) {
+      task.completer.complete(['网络连接失败，请检查网络后重试']);
     } finally {
-      _mutex--;
+      _refreshTask = null;
+      task.partialUpdateListeners.clear();
+      task.statusListeners.clear();
+      task.latestPartial = null;
+    }
+  }
+
+  Future<List<String?>> _refreshOnce(_ScholarRefreshTask task,
+      {required bool userInitiated}) async {
+    final round = ++task.round;
+    task.latestPartial = null;
+    task.partialApplied = false;
+    try {
+      if (username == null || password == null) return ['未登录'];
+      // getEverything 会在会话未初始化或过期时登录；创建 Spider 也在共享
+      // 任务内完成，避免启动时先 login 再 refresh 留下并发空隙。
+      final spider = _spider ??= _spiderFactory(username!, password!);
+      task.asyncRefresh = _db?.getAsyncRefresh() ?? false;
+      final fetchLabels = spider.fetchLabels;
+      _publishFetchStatuses(task, [
+        for (final label in fetchLabels)
+          ModuleFetchStatus(label, FetchModuleState.pending)
+      ]);
+
+      final value = await spider.getEverything(
+          allowUserInteraction: userInitiated,
+          // 即使当前没有页面订阅也记录进度，后来者可以立即收到当前状态。
+          // 仅开启异步刷新且有数据订阅者时才合并中间态；后台仍只合并终态。
+          onProgress: (partial) {
+            if (!identical(_refreshTask, task) || task.round != round) return;
+            task.latestPartial = partial;
+            task.partialApplied = false;
+            _applyPartialRefresh(task);
+            _publishFetchStatuses(
+                task, moduleStatusesFromErrors(partial.item2, fetchLabels));
+          });
+
+      _applyFetchResult(value);
+      if (value.item1.every((e) => e == null)) {
+        updateLastUpdateTime(value.item2);
+      }
+      task.latestPartial = null;
+      // 最后完成的模块不触发 onProgress，在这里上报本轮终态。
+      _publishFetchStatuses(
+          task, moduleStatusesFromErrors(value.item2, fetchLabels));
+      await _db?.setScholar(this);
+      return value.item1.every((e) => e == null) ? value.item2 : value.item1;
+    } catch (_) {
+      // 异常也结束本轮状态并返回真实失败，已有数据保留；共享任务仍可补刷。
+      _publishFetchStatuses(task, [
+        for (final status in task.statuses)
+          ModuleFetchStatus(
+              status.label,
+              status.state == FetchModuleState.pending
+                  ? FetchModuleState.failed
+                  : status.state)
+      ]);
+      return ['网络连接失败，请检查网络后重试'];
+    }
+  }
+
+  void _applyPartialRefresh(_ScholarRefreshTask task) {
+    final partial = task.latestPartial;
+    if (partial == null ||
+        task.partialApplied ||
+        task.partialUpdateListeners.isEmpty ||
+        !task.asyncRefresh) {
+      return;
+    }
+    try {
+      _applyFetchResult(partial, partial: true);
+      if (partial.item1.every((e) => e == null)) {
+        updateLastUpdateTime(partial.item2);
+      }
+      task.partialApplied = true;
+    } catch (_) {
+      // 中间态合并失败由最终合并兜底，不影响其他模块继续抓取。
+      return;
+    }
+    for (final listener in task.partialUpdateListeners.toList()) {
+      _notifyRefreshListener(listener);
+    }
+  }
+
+  void _publishFetchStatuses(
+      _ScholarRefreshTask task, List<ModuleFetchStatus> statuses) {
+    if (statuses.isEmpty) return;
+    task.statuses = List.unmodifiable(statuses);
+    for (final listener in task.statusListeners.toList()) {
+      _notifyRefreshListener(() => listener(task.statuses));
+    }
+  }
+
+  void _notifyRefreshListener(void Function() listener) {
+    try {
+      listener();
+    } catch (_) {
+      // 页面订阅者的异常不应中断抓取或其他订阅者的通知。
     }
   }
 
@@ -470,7 +526,8 @@ class Scholar {
     await _db?.setScholar(this);
   }
 
-  Scholar.fromJson(Map<String, dynamic> json) {
+  Scholar.fromJson(Map<String, dynamic> json, {SpiderFactory? spiderFactory})
+      : _spiderFactory = spiderFactory ?? _createSpider {
     username = json.containsKey('username')
         ? json['username']
         : null; // <=0.2.6 Compatibility
@@ -512,4 +569,19 @@ class Scholar {
       aboardGpa.insert(2, 0);
     }
   }
+}
+
+class _ScholarRefreshTask {
+  _ScholarRefreshTask(this.startedByUser);
+
+  final bool startedByUser;
+  final completer = Completer<List<String?>>();
+  bool manualRefreshRequested = false;
+  bool asyncRefresh = false;
+  int round = 0;
+  final partialUpdateListeners = <void Function()>{};
+  final statusListeners = <void Function(List<ModuleFetchStatus>)>{};
+  List<ModuleFetchStatus> statuses = const [];
+  EverythingTuple? latestPartial;
+  bool partialApplied = false;
 }
