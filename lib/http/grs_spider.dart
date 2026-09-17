@@ -190,7 +190,8 @@ class GrsSpider implements Spider {
   // 返回一堆错误信息，如果有的话。看看返回的List是不是空的就知道刷新是否成功。
   @override
   Future<EverythingTuple> getEverything(
-      {void Function(EverythingTuple partial)? onProgress}) async {
+      {bool allowUserInteraction = false,
+      void Function(EverythingTuple partial)? onProgress}) async {
     // 返回值初始化
     var outSemesters = <Semester>[];
     var outGrades = <Grade>[];
@@ -290,8 +291,9 @@ class GrsSpider implements Spider {
           return Future.value("已取消");
         }
         try {
-          var value = await _fetchWithRetry(
-              () => _zdbk.getTimetable(_httpClient, yearStr, season));
+          var value = await _fetchWithRetry(() => _zdbk.getTimetable(
+              _httpClient, yearStr, season,
+              allowUserInteraction: allowUserInteraction));
           var semKey = season.startsWith('1') ? '$yearStr-1' : '$yearStr-2';
           var sessions = value.item2.toList();
           sessions.sort((a, b) {

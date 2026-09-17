@@ -194,7 +194,8 @@ class UgrsSpider implements Spider {
 
   @override
   Future<EverythingTuple> getEverything(
-      {void Function(EverythingTuple partial)? onProgress}) async {
+      {bool allowUserInteraction = false,
+      void Function(EverythingTuple partial)? onProgress}) async {
     var fetches = <Future<String?>>[];
 
     var outSemesters = <Semester>[];
@@ -271,8 +272,9 @@ class UgrsSpider implements Spider {
       Future<String?> handleTimetable(season) async {
         if (cancelTimetableFetch) return Future.value("已取消");
         try {
-          var value = await _fetchWithRetry(
-              () => _zdbk.getTimetable(_httpClient, yearStr, season));
+          var value = await _fetchWithRetry(() => _zdbk.getTimetable(
+              _httpClient, yearStr, season,
+              allowUserInteraction: allowUserInteraction));
 
           var semKey = season.startsWith('1') ? '$yearStr-1' : '$yearStr-2';
           var sessions = value.item2.toList();
@@ -492,6 +494,9 @@ class MockSpider extends UgrsSpider {
   MockSpider() : super('3200000000', '');
 
   @override
+  List<String> get fetchLabels => const ['校历', '课表', '考试', '成绩', '主修', '作业'];
+
+  @override
   Future<List<String?>> login() async {
     await Future.delayed(const Duration(seconds: 4));
     return [null, null];
@@ -502,7 +507,8 @@ class MockSpider extends UgrsSpider {
 
   @override
   Future<EverythingTuple> getEverything(
-      {void Function(EverythingTuple partial)? onProgress}) async {
+      {bool allowUserInteraction = false,
+      void Function(EverythingTuple partial)? onProgress}) async {
     await Future.delayed(const Duration(seconds: 2));
     return Tuple7(
         [null, null],

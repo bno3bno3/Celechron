@@ -9,7 +9,6 @@ import 'package:celechron/model/grade.dart';
 import 'package:celechron/model/session.dart';
 import 'package:celechron/model/exams_dto.dart';
 import 'package:celechron/design/captcha_input.dart';
-import 'package:celechron/utils/global.dart';
 import 'exceptions.dart';
 
 class Zdbk {
@@ -276,7 +275,8 @@ class Zdbk {
   }
 
   Future<Tuple<Exception?, Iterable<Session>>> getTimetable(
-      HttpClient httpClient, String year, String semester) async {
+      HttpClient httpClient, String year, String semester,
+      {bool allowUserInteraction = false}) async {
     return await _withAutoRelogin(httpClient, () async {
       late HttpClientRequest request;
       late HttpClientResponse response;
@@ -311,7 +311,7 @@ class Zdbk {
 
           if (responseText.contains("captcha_error")) {
             _captcha = null;
-            if (GlobalStatus.isFirstScreenReq) {
+            if (!allowUserInteraction) {
               throw ExceptionWithMessage("需要验证码");
             }
             var imageBytes = await getCaptcha(httpClient);

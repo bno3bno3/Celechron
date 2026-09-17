@@ -42,7 +42,7 @@ void main() {
           statuses.where((s) => s.state == FetchModuleState.pending), isEmpty);
     });
 
-    test('长度不一致时视为不可信，返回空列表（如 MockSpider 的 6 项错误表）', () {
+    test('长度不一致时视为不可信，返回空列表', () {
       final statuses = moduleStatusesFromErrors(
           [null, null, null, null, null, null], labels);
       expect(statuses, isEmpty);
