@@ -87,6 +87,10 @@ class Zdbk {
   }
 
   void _checkSessionExpired(HttpClientResponse response, String responseText) {
+    // 失效会话在这几个查询接口上返回 HTTP 901 且响应体为空，不走重定向，必须单独识别
+    if (response.statusCode == 901) {
+      throw SessionExpiredException();
+    }
     if (response.statusCode == HttpStatus.movedTemporarily ||
         response.statusCode == HttpStatus.movedPermanently ||
         response.statusCode == HttpStatus.found) {
@@ -104,6 +108,16 @@ class Zdbk {
     if (error is Exception) return error;
     return ExceptionWithMessage(error.toString());
   }
+
+  // 教务网对课表查询接口按会话限流，触发时返回 HTTP 921"请求过于频繁"。
+  // 2026-09 实测：约 1 秒内恢复，且计数按会话（重登即重置）。
+  // 因此课表请求被限流时原地退避重试即可，不应重新登录——
+  // 重登会 force close 共享 HttpClient，波及并发进行中的其他抓取。
+  static Duration rateLimitBackoff = const Duration(milliseconds: 1200);
+  static const maxRateLimitRetries = 4;
+
+  static bool _isRateLimited(int statusCode, String responseText) =>
+      statusCode == 921 || responseText.contains("请求过于频繁");
 
   List<Map<String, dynamic>> _getCachedJsonMaps(String key) {
     try {
@@ -188,6 +202,10 @@ class Zdbk {
         var responseText = await response.transform(utf8.decoder).join();
         _checkSessionExpired(response, responseText);
 
+        if (_isRateLimited(response.statusCode, responseText)) {
+          throw ExceptionWithMessage("请求过于频繁，请稍后再试");
+        }
+
         var transcriptJson = RegExp('(?<="items":)\\[(.*?)\\](?=,"limit")')
             .firstMatch(responseText)
             ?.group(0);
@@ -252,6 +270,10 @@ class Zdbk {
         var responseText = await response.transform(utf8.decoder).join();
         _checkSessionExpired(response, responseText);
 
+        if (_isRateLimited(response.statusCode, responseText)) {
+          throw ExceptionWithMessage("请求过于频繁，请稍后再试");
+        }
+
         var transcriptJson = RegExp('(?<="items":)\\[(.*?)\\](?=,"limit")')
             .firstMatch(responseText)
             ?.group(0);
@@ -282,7 +304,9 @@ class Zdbk {
       late HttpClientResponse response;
 
       try {
-        for (var i = 0; i < 3; i++) {
+        var captchaRounds = 0;
+        var rateLimitRetries = 0;
+        while (true) {
           request = await httpClient
               .postUrl(Uri.parse(
                   "https://zdbk.zju.edu.cn/jwglxt/kbcx/xskbcx_cxXsKb.html"))
@@ -309,8 +333,19 @@ class Zdbk {
           var responseText = await response.transform(utf8.decoder).join();
           _checkSessionExpired(response, responseText);
 
+          if (_isRateLimited(response.statusCode, responseText)) {
+            if (++rateLimitRetries > maxRateLimitRetries) {
+              throw ExceptionWithMessage("教务网限流，请求过于频繁，请稍后重试");
+            }
+            await Future.delayed(rateLimitBackoff);
+            continue;
+          }
+
           if (responseText.contains("captcha_error")) {
             _captcha = null;
+            if (++captchaRounds > 3) {
+              throw ExceptionWithMessage("验证码识别失败");
+            }
             if (!allowUserInteraction) {
               throw ExceptionWithMessage("需要验证码");
             }
@@ -328,17 +363,18 @@ class Zdbk {
           }
 
           if (responseText == "null") return Tuple(null, []);
-          var timetableJson = RegExp('(?<="kbList":)\\[(.*?)\\](?=,"xh")')
-              .firstMatch(responseText)
-              ?.group(0);
-          if (timetableJson == null) throw ExceptionWithMessage("无法解析课表");
-          var sessions = (jsonDecode(timetableJson) as List<dynamic>)
+          var kbList = _extractKbList(responseText);
+          if (kbList == null) {
+            throw ExceptionWithMessage(
+                "无法解析课表（HTTP ${response.statusCode}）");
+          }
+          _db?.setCachedWebPage(
+              'zdbk_Timetable$year$semester', jsonEncode(kbList));
+          var sessions = kbList
               .where((e) => e['kcb'] != null && (e['sfyjskc'] != "1"))
               .map((e) => Session.fromZdbk(e));
-          _db?.setCachedWebPage('zdbk_Timetable$year$semester', timetableJson);
           return Tuple(null, sessions);
         }
-        throw ExceptionWithMessage("验证码识别失败");
       } catch (e) {
         if (e is SessionExpiredException) rethrow;
         var exception = _toException(e);
@@ -349,6 +385,26 @@ class Zdbk {
                 .map((e) => Session.fromZdbk(e)));
       }
     });
+  }
+
+  // 优先把整个响应当作 JSON 解析后取 kbList（对教务网调整字段顺序健壮），
+  // 失败时退回旧版的正则提取
+  static List<dynamic>? _extractKbList(String responseText) {
+    try {
+      final decoded = jsonDecode(responseText);
+      if (decoded is Map && decoded['kbList'] is List) {
+        return decoded['kbList'] as List<dynamic>;
+      }
+    } catch (_) {}
+    var timetableJson = RegExp('(?<="kbList":)\\[(.*?)\\](?=,"xh")')
+        .firstMatch(responseText)
+        ?.group(0);
+    if (timetableJson == null) return null;
+    try {
+      return jsonDecode(timetableJson) as List<dynamic>;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Tuple<Exception?, Iterable<ExamDto>>> getExamsDto(
@@ -379,6 +435,10 @@ class Zdbk {
 
         var responseText = await response.transform(utf8.decoder).join();
         _checkSessionExpired(response, responseText);
+
+        if (_isRateLimited(response.statusCode, responseText)) {
+          throw ExceptionWithMessage("请求过于频繁，请稍后再试");
+        }
 
         var transcriptJson = RegExp('(?<="items":)\\[(.*?)\\](?=,"limit")')
             .firstMatch(responseText)

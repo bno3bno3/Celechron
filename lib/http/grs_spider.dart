@@ -32,6 +32,8 @@ class GrsSpider implements Spider {
   static const _retryableFetchErrors = <String>[
     "iplanetdirectorypro无效",
     "会话已过期",
+    // 教务网限流按会话计数，重新登录换新会话即可解除
+    "请求过于频繁",
   ];
 
   /// getEverything 内各顶层抓取任务的标签，与抓取错误列表下标一一对应
