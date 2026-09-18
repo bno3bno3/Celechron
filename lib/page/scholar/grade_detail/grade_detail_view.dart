@@ -40,16 +40,9 @@ class GradeDetailPage extends StatelessWidget {
       return Tuple([s1.gpa[0], s1.gpa[1], s1.gpa[2]], s1.credits);
     }
     var s2 = _gradeDetailController.semestersWithGrades[another];
-    double credits = s1.credits + s2.credits;
-    if (credits == 0) {
-      return Tuple([0, 0, 0], 0);
-    }
-    return Tuple(
-        List.generate(
-            3,
-            (int i) =>
-                (s1.credits * s1.gpa[i] + s2.credits * s2.gpa[i]) / credits),
-        credits);
+    // 学年均绩按官方口径：两学期全部成绩合并后 Σ(绩点×学分)/Σ(学分)，挂科学分计入分母。
+    // 不能用各学期 credits 做加权，因为 credits 只含已获得学分，会漏掉挂科课程。
+    return GpaHelper.calculateGpa(s1.grades.followedBy(s2.grades));
   }
 
   Widget _buildGradeBrief(BuildContext context) {
