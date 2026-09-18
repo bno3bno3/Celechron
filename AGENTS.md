@@ -140,7 +140,8 @@ If Pigeon interfaces change, regenerate the corresponding Dart/native outputs an
 - Use `MockSpider` or sanitized fixtures for examples.
 - Avoid adding debug prints that expose credentials, cookies, response bodies, grades, course records, or homework details.
 - Keep `.claude/settings.local.json` untouched unless the user explicitly asks to change local Claude settings.
-- 在你结束任务之前，要整理一下过程中你产生的中间文件（不止是在这个项目中的，也包括你放在c盘等其他地方的），如测试脚本等，并将其绝对路径写入`rubbish.md`。
+- 在你要创建一些脚本或者记录一些东西的时候，要把他们放在本目录的temp文件夹下面，如果没有就自己创建。不能放在项目之外的地方
+- 在你结束任务之前，要整理一下过程中你产生的中间文件（不止是在这个项目目录中的，也包括你放在c盘等其他任意地方的，但不包括与项目功能等相关的文件。换言之，就是删掉不影响项目使用的文件），如脚本、日志等各种文件，并将其绝对路径写入`rubbish.md`。然后在给你的该任务完成后把他们删掉（依照你写入的rubbish.md），然后再清掉rubbish.md中相应的部分。如果rubbish.md里面还有其他的文件，就逐一看看他们删掉是否影响项目使用，如果不影响，仅仅作为中间工具或者是一些其他的，就把他们也删掉好了，然后再清空rubbish.md。
 
 ## Current Notes
 
