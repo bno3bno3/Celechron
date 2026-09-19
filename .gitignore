@@ -890,6 +890,5 @@ DerivedData/
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 
 # claude AI
-CLAUDE.md
 .claude/
 rubbish.md
