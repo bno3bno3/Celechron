@@ -115,9 +115,15 @@ class ScholarController extends GetxController {
   Duration get durationToLastUpdateHomework =>
       _durationToLastUpdateHomework.value;
 
-  List<double> get gpa => _option.gpaStrategy.value == GpaStrategy.first
-      ? _scholar.value.gpa
-      : _scholar.value.aboardGpa;
+  List<double> get gpa {
+    var first = _option.gpaStrategy.value == GpaStrategy.first;
+    var base = first ? _scholar.value.gpa : _scholar.value.aboardGpa;
+    // 展示推免绩点：只替换五分制，其余分制保持原始值
+    if (!_option.showRecommendGpa.value) return base;
+    var result = List<double>.of(base);
+    result[0] = _scholar.value.recommendGpa[first ? 0 : 1];
+    return result;
+  }
 
   List<Todo> get todos => _scholar.value.todos
     ..sort((a, b) {

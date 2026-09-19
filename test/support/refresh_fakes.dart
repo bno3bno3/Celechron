@@ -4,6 +4,7 @@ import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/http/spider.dart';
 import 'package:celechron/model/grade.dart';
 import 'package:celechron/model/option.dart';
+import 'package:celechron/model/recommend_gpa_rule.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:celechron/model/semester.dart';
 import 'package:celechron/model/todo.dart';
@@ -65,6 +66,7 @@ Option refreshOptions() => Option(
       courseIdMappingList: <CourseIdMap>[].obs,
       hideHomeGpa: false.obs,
       asyncRefresh: false.obs,
+      showRecommendGpa: false.obs,
     );
 
 // 只提供成绩合并用到的设置，不初始化账号、通知或系统日历。
@@ -86,6 +88,19 @@ class RefreshDatabase extends Fake implements DatabaseHelper {
 
   @override
   bool getAsyncRefresh() => asyncRefresh;
+
+  // 派生值重算会读取主修来源与推免规则，测试里一律用默认值
+  @override
+  bool getUseCustomMajor() => false;
+
+  @override
+  Map<String, bool> getMajorOverrides() => {};
+
+  @override
+  RecommendGpaRule getRecommendGpaRule() => const RecommendGpaRule();
+
+  @override
+  Map<String, double> getWeightedGpa() => {};
 
   @override
   Future<void> setScholar(Scholar scholar) async {

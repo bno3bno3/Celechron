@@ -6,6 +6,7 @@ import 'package:celechron/page/option/option_controller.dart';
 
 import 'period.dart';
 import 'grade.dart';
+import 'recommend_gpa_rule.dart';
 import 'semester.dart';
 import 'todo.dart';
 import 'package:celechron/utils/gpa_helper.dart';
@@ -63,8 +64,21 @@ class Scholar {
   // 所获学分
   double credit = 0.0;
 
-  // 主修成绩，两个数据依次为主修GPA，主修学分
+  // 主修成绩，两个数据依次为主修GPA，主修学分（官网口径）
   List<double> majorGpaAndCredit = [0.0, 0.0];
+
+  // 以下为派生值，不持久化：加载、刷新和用户改动设置时由 recalculateDerivedGpa 重算
+  // 按「主修课程来源」得到的主修GPA与主修学分：官网口径时等于 majorGpaAndCredit
+  List<double> effectiveMajorGpaAndCredit = [0.0, 0.0];
+  // 五分制推免绩点，两个数据依次为重修取首次、取最高
+  List<double> recommendGpa = [0.0, 0.0];
+  bool _useCustomMajor = false;
+  Map<String, bool> _majorOverrides = const {};
+
+  /// 一门课是否计入主修：自定义模式下覆盖表优先，无记录跟随官网标记
+  bool isMajor(Grade grade) => _useCustomMajor
+      ? (_majorOverrides[grade.id] ?? grade.major)
+      : grade.major;
 
   // 特殊日期
   Map<DateTime, String> specialDates = {};
@@ -137,6 +151,8 @@ class Scholar {
     aboardGpa = [0.0, 0.0, 0.0, 0.0];
     credit = 0.0;
     majorGpaAndCredit = [0.0, 0.0];
+    effectiveMajorGpaAndCredit = [0.0, 0.0];
+    recommendGpa = [0.0, 0.0];
     pt2 = 0.0;
     pt3 = 0.0;
     pt4 = 0.0;
@@ -372,15 +388,21 @@ class Scholar {
         tempPt3,
         tempPt4);
 
+    _computeGpas();
+  }
+
+  // 由 grades 计算保研/出国 GPA、所获学分，以及主修与推免的派生值
+  void _computeGpas() {
     // 保研成绩，只取第一次
     var netGrades = grades.values.map((e) => e.first);
     if (netGrades.isNotEmpty) {
       gpa = GpaHelper.calculateGpa(netGrades).item1;
     }
-    // 出国成绩，取最高的一次
+    // 出国成绩，取最高的一次。排序用副本，保留 grades 内的修读先后顺序
     var aboardNetGrades = grades.values.map((e) {
-      e.sort((a, b) => a.hundredPoint.compareTo(b.hundredPoint));
-      return e.last;
+      var sorted = List<Grade>.of(e)
+        ..sort((a, b) => a.hundredPoint.compareTo(b.hundredPoint));
+      return sorted.last;
     });
     if (aboardNetGrades.isNotEmpty) {
       var result = GpaHelper.calculateGpa(aboardNetGrades);
@@ -390,6 +412,35 @@ class Scholar {
     } else {
       credit = 0.0;
     }
+    recalculateDerivedGpa();
+  }
+
+  /// 按当前「主修课程来源」与「推免绩点规则」重算派生值。
+  /// 设置变化后调用；不落盘，加载时会重新计算
+  void recalculateDerivedGpa() {
+    var db = _db;
+    _useCustomMajor = db?.getUseCustomMajor() ?? false;
+    _majorOverrides = _useCustomMajor ? (db?.getMajorOverrides() ?? {}) : {};
+
+    var allGrades = grades.values.expand((e) => e);
+    if (_useCustomMajor) {
+      var result = GpaHelper.calculateGpa(allGrades.where(isMajor));
+      effectiveMajorGpaAndCredit = [result.item1[0], result.item2];
+    } else {
+      effectiveMajorGpaAndCredit = List<double>.of(majorGpaAndCredit);
+    }
+
+    var rule = db?.getRecommendGpaRule() ?? const RecommendGpaRule();
+    var courseWeights = db?.getWeightedGpa() ?? const <String, double>{};
+    var firstGrades = grades.values.map((e) => e.first);
+    var bestGrades = grades.values.map(
+        (e) => e.reduce((a, b) => b.hundredPoint >= a.hundredPoint ? b : a));
+    recommendGpa = [
+      GpaHelper.calculateRecommendGpa(firstGrades, rule,
+          isMajor: isMajor, courseWeights: courseWeights),
+      GpaHelper.calculateRecommendGpa(bestGrades, rule,
+          isMajor: isMajor, courseWeights: courseWeights),
+    ];
   }
 
   void updateLastUpdateTime(List<String?> errorMessage) {
@@ -504,24 +555,7 @@ class Scholar {
       return p;
     });
 
-    // 保研成绩，只取第一次
-    var netGrades = grades.values.map((e) => e.first);
-    if (netGrades.isNotEmpty) {
-      gpa = GpaHelper.calculateGpa(netGrades).item1;
-    }
-    // 出国成绩，取最高的一次
-    var aboardNetGrades = grades.values.map((e) {
-      e.sort((a, b) => a.hundredPoint.compareTo(b.hundredPoint));
-      return e.last;
-    });
-    if (aboardNetGrades.isNotEmpty) {
-      var result = GpaHelper.calculateGpa(aboardNetGrades);
-      aboardGpa = result.item1;
-      // 所获学分，不包括挂科的。
-      credit = result.item2;
-    } else {
-      credit = 0.0;
-    }
+    _computeGpas();
 
     await _db?.setScholar(this);
   }

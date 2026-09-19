@@ -10,7 +10,6 @@ import 'package:celechron/design/persistent_headers.dart';
 import 'grade_card.dart';
 import 'grade_detail_controller.dart';
 import 'package:celechron/utils/gpa_helper.dart';
-import 'weighted_gpa_view.dart';
 
 class GradeDetailPage extends StatelessWidget {
   final _gradeDetailController = Get.put(GradeDetailController());
@@ -36,13 +35,20 @@ class GradeDetailPage extends StatelessWidget {
   Tuple<List<double>, double> getYearStats(int semesterIndex) {
     var s1 = _gradeDetailController.semestersWithGrades[semesterIndex];
     int another = getPairedSemesterIndex(semesterIndex);
-    if (another == semesterIndex) {
-      return Tuple([s1.gpa[0], s1.gpa[1], s1.gpa[2]], s1.credits);
-    }
-    var s2 = _gradeDetailController.semestersWithGrades[another];
+    var yearGrades = another == semesterIndex
+        ? s1.grades
+        : s1.grades.followedBy(
+            _gradeDetailController.semestersWithGrades[another].grades);
     // 学年均绩按官方口径：两学期全部成绩合并后 Σ(绩点×学分)/Σ(学分)，挂科学分计入分母。
     // 不能用各学期 credits 做加权，因为 credits 只含已获得学分，会漏掉挂科课程。
-    return GpaHelper.calculateGpa(s1.grades.followedBy(s2.grades));
+    var stats = GpaHelper.calculateGpa(yearGrades);
+    // 展示推免绩点：只替换五分制
+    if (_gradeDetailController.showRecommendGpa) {
+      var gpa = List<double>.of(stats.item1);
+      gpa[0] = _gradeDetailController.getYearRecommendGpa(yearGrades);
+      return Tuple(gpa, stats.item2);
+    }
+    return stats;
   }
 
   Widget _buildGradeBrief(BuildContext context) {
@@ -374,25 +380,6 @@ class GradeDetailPage extends StatelessWidget {
                       ),
                     if (_gradeDetailController.customGpaMode.value)
                       const SizedBox(width: 8),
-                    // 加权绩点入口按钮（仅在非自定义GPA模式下显示）
-                    // 点击后跳转到加权绩点页面，可设置各课程的加权比例（0.8-1.2）
-                    if (!_gradeDetailController.customGpaMode.value)
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: const Icon(
-                          CupertinoIcons.chart_bar_alt_fill,
-                          semanticLabel: 'Weighted GPA',
-                        ),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            CupertinoPageRoute(
-                              builder: (context) => WeightedGpaPage(),
-                            ),
-                          );
-                        },
-                      ),
-                    // if (!_gradeDetailController.customGpaMode.value)
-                    //   const SizedBox(width: 8),
                     CupertinoButton(
                       padding: EdgeInsets.zero,
                       child: Icon(

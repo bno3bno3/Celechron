@@ -8,7 +8,7 @@ Celechron is a Flutter/Dart cross-platform app for Zhejiang University students.
 
 The app is stateful and data-heavy. Most features depend on persisted Hive data, secure credentials, GetX global state, and network scraping of ZJU services. Prefer small, behavior-preserving changes unless the requested task explicitly calls for a broader refactor.
 
-本app的设计理念是简洁、简约，在设计项目新功能、新模块的界面时应当遵从这一理念。
+本app的设计理念是简洁、简约，在设计项目新功能、新模块的界面时应当在与原其他界面风格相同的条件下遵从这一理念。
 
 ## Tech Stack and Commands
 

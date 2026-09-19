@@ -124,6 +124,7 @@ class Grade {
         'hundredPoint': hundredPoint,
         'gpaIncluded': gpaIncluded,
         'creditIncluded': creditIncluded,
+        'major': major,
       };
 
   Grade.fromJson(Map<String, dynamic> json)
@@ -136,5 +137,7 @@ class Grade {
         fourPointLegacy = json['fourPointLegacy'] ?? 0.0,
         hundredPoint = json['hundredPoint'],
         gpaIncluded = json['gpaIncluded'],
-        creditIncluded = json['creditIncluded'];
+        creditIncluded = json['creditIncluded'],
+        // 旧版本缓存不含此字段，冷启动后官网主修标记为空，待刷新后补齐
+        major = json['major'] ?? false;
 }

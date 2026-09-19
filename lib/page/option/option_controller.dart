@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:celechron/model/scholar.dart';
 import 'package:celechron/model/option.dart';
+import 'package:celechron/model/recommend_gpa_rule.dart';
 import 'package:celechron/model/task.dart';
 import 'package:celechron/model/period.dart';
 import 'package:celechron/database/database_helper.dart';
@@ -192,6 +193,63 @@ class OptionController extends GetxController {
     _db.setAsyncRefresh(value);
   }
 
+  // —— 主修课程来源与推免绩点 ——
+  // 主修来源、覆盖表、规则按账号归档在 customGpaBox；展示开关为全局设置
+
+  bool get showRecommendGpa => _option.showRecommendGpa.value;
+
+  set showRecommendGpa(bool value) {
+    _option.showRecommendGpa.value = value;
+    _db.setShowRecommendGpa(value);
+  }
+
+  late final RxBool useCustomMajor = _db.getUseCustomMajor().obs;
+  late final RxMap<String, bool> majorOverrides =
+      RxMap<String, bool>(_db.getMajorOverrides());
+  late final Rx<RecommendGpaRule> recommendGpaRule =
+      _db.getRecommendGpaRule().obs;
+
+  void setUseCustomMajor(bool value) {
+    useCustomMajor.value = value;
+    _db.setUseCustomMajor(value);
+    _recalculateDerivedGpa();
+  }
+
+  /// 设置一门课的主修覆盖；传 null 表示清除覆盖、恢复跟随官网
+  void setMajorOverride(String gradeId, bool? value) {
+    if (value == null) {
+      majorOverrides.remove(gradeId);
+    } else {
+      majorOverrides[gradeId] = value;
+    }
+    _db.setMajorOverrides(Map<String, bool>.from(majorOverrides));
+    _recalculateDerivedGpa();
+  }
+
+  void clearMajorOverrides() {
+    majorOverrides.clear();
+    _db.setMajorOverrides({});
+    _recalculateDerivedGpa();
+  }
+
+  void setRecommendGpaRule(RecommendGpaRule rule) {
+    recommendGpaRule.value = rule;
+    _db.setRecommendGpaRule(rule);
+    _recalculateDerivedGpa();
+  }
+
+  void _recalculateDerivedGpa() {
+    scholar.value.recalculateDerivedGpa();
+    scholar.refresh();
+  }
+
+  /// 账号切换/退出后，把活动槽位里的主修与推免设置重新装入内存
+  void _reloadGpaSettings() {
+    useCustomMajor.value = _db.getUseCustomMajor();
+    majorOverrides.assignAll(_db.getMajorOverrides());
+    recommendGpaRule.value = _db.getRecommendGpaRule();
+  }
+
   String get celechronVersion => _fuse.value.displayVersion;
 
   bool get hasNewVersion => _fuse.value.hasNewVersion;
@@ -359,12 +417,16 @@ class OptionController extends GetxController {
       var clearWrites = <Future>[
         _db.setCustomGpa({}),
         _db.setWeightedGpa({}),
+        _db.setUseCustomMajor(false),
+        _db.setMajorOverrides({}),
+        _db.setRecommendGpaRule(const RecommendGpaRule()),
         _db.setTaskList([]),
         _db.setTaskListUpdateTime(epoch),
         _db.setFlowList([]),
         _db.setFlowListUpdateTime(epoch),
       ];
       await Future.wait(clearWrites);
+      _reloadGpaSettings();
       // 写空表保留 accountList 键，后台刷新维持「已迁移」门控
       await _db.setAccountList([]);
       await _db.removeScholar();
@@ -434,11 +496,17 @@ class OptionController extends GetxController {
     // 活动槽位持久化。Hive put 同步更新内存，磁盘刷写由 writes 兜底
     writes.add(_db.setCustomGpa(restored.customGpa));
     writes.add(_db.setWeightedGpa(restored.weightedGpa));
+    writes.add(_db.setUseCustomMajor(restored.useCustomMajor));
+    writes.add(_db.setMajorOverrides(restored.majorOverrides));
+    writes.add(_db.setRecommendGpaRule(restored.recommendGpaRule));
     writes.add(_db.setTaskList(restored.taskList));
     writes.add(_db.setTaskListUpdateTime(restored.taskListUpdateTime));
     writes.add(_db.setFlowList(restored.flowList));
     writes.add(_db.setFlowListUpdateTime(restored.flowListUpdateTime));
     writes.add(_db.setScholar(next));
+    // 归档的 Scholar 不含派生值，按刚装入的设置重算
+    next.recalculateDerivedGpa();
+    _reloadGpaSettings();
     return next;
   }
 
@@ -462,12 +530,17 @@ class OptionController extends GetxController {
       _taskList.clear();
       writes.add(_db.setCustomGpa({}));
       writes.add(_db.setWeightedGpa({}));
+      writes.add(_db.setUseCustomMajor(false));
+      writes.add(_db.setMajorOverrides({}));
+      writes.add(_db.setRecommendGpaRule(const RecommendGpaRule()));
       writes.add(_db.setTaskList([]));
       writes.add(_db.setTaskListUpdateTime(epoch));
       writes.add(_db.setFlowList([]));
       writes.add(_db.setFlowListUpdateTime(epoch));
     }
     probe.db = _db;
+    probe.recalculateDerivedGpa();
+    _reloadGpaSettings();
     scholar.value = probe;
     writes.add(_db.setScholar(probe));
   }

@@ -1,7 +1,26 @@
 import 'package:celechron/utils/tuple.dart';
 import 'package:celechron/model/grade.dart';
+import 'package:celechron/model/recommend_gpa_rule.dart';
 
 class GpaHelper {
+  /// 按推免规则计算五分制推免绩点
+  ///
+  /// - [isMajor] 判断一门课是否计入主修
+  /// - [courseWeights] 单门课程权重覆盖，优先于规则里的主修课权重
+  static double calculateRecommendGpa(
+      Iterable<Grade> grades, RecommendGpaRule rule,
+      {required bool Function(Grade) isMajor,
+      Map<String, double> courseWeights = const {}}) {
+    var list = grades.toList(growable: false);
+    var majorGpa = calculateGpa(list.where(isMajor)).item1[0];
+    var weightMap = <String, double>{
+      for (var g in list)
+        g.id: courseWeights[g.id] ?? (isMajor(g) ? rule.majorWeight : 1.0)
+    };
+    var overallGpa = calculateWeightedGpa(list, weightMap).item1[0];
+    return rule.majorRatio * majorGpa + rule.overallRatio * overallGpa;
+  }
+
   static Tuple<List<double>, double> calculateGpa(Iterable<Grade> grades) {
     // 总学分
     var earnedCredits = grades.fold<double>(0.0, (p, e) => p + e.earnedCredit);
@@ -44,8 +63,7 @@ class GpaHelper {
   /// 4. 学分保持不变，不乘以加权比例
   ///
   /// 使用场景：
-  /// - WeightedGpaController.calculateWeightedGpa() 调用此函数计算加权绩点
-  /// - 用于加权绩点页面的实时计算和显示
+  /// - calculateRecommendGpa() 用它计算推免绩点里的加权总均绩
   static Tuple<List<double>, double> calculateWeightedGpa(
       Iterable<Grade> grades, Map<String, double> weightMap) {
     // 总学分（保持不变）

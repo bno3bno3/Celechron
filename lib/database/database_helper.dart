@@ -9,6 +9,7 @@ import 'package:celechron/worker/fuse.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:celechron/model/period.dart';
 import 'package:celechron/model/option.dart';
+import 'package:celechron/model/recommend_gpa_rule.dart';
 import 'package:celechron/utils/utils.dart';
 import 'adapters/duration_adapter.dart';
 import 'adapters/scholar_adapter.dart';
@@ -104,6 +105,7 @@ class DatabaseHelper {
   final String kCourseIdMappingList = 'courseIdMappingList';
   final String kHideHomeGpa = 'hideHomeGpa';
   final String kAsyncRefresh = 'asyncRefresh';
+  final String kShowRecommendGpa = 'showRecommendGpa';
 
   Option getOption() {
     return Option(
@@ -117,6 +119,7 @@ class DatabaseHelper {
       courseIdMappingList: getCourseIdMappingList().obs,
       hideHomeGpa: getHideHomeGpa().obs,
       asyncRefresh: getAsyncRefresh().obs,
+      showRecommendGpa: getShowRecommendGpa().obs,
     );
   }
 
@@ -223,6 +226,15 @@ class DatabaseHelper {
     await optionsBox.put(kAsyncRefresh, asyncRefresh);
   }
 
+  // 展示推免绩点：开启后首页与成绩页的五分制改为按推免规则计算
+  bool getShowRecommendGpa() {
+    return optionsBox.get(kShowRecommendGpa) ?? false;
+  }
+
+  Future<void> setShowRecommendGpa(bool value) async {
+    await optionsBox.put(kShowRecommendGpa, value);
+  }
+
   List<CourseIdMap> getCourseIdMappingList() {
     if (optionsBox.get(kCourseIdMappingList) == null) {
       optionsBox.put(kCourseIdMappingList, <CourseIdMap>[]);
@@ -308,6 +320,7 @@ class DatabaseHelper {
       })
     ]);
     scholar.db = this;
+    scholar.recalculateDerivedGpa();
     return scholar;
   }
 
@@ -386,6 +399,10 @@ class DatabaseHelper {
       flowBox.put('${kFlowListUpdateTime}_$username', flowListUpdateTime),
       customGpaBox.put('selectList_$username', getCustomGpa()),
       customGpaBox.put('weightedGpa_$username', getWeightedGpa()),
+      customGpaBox.put('useCustomMajor_$username', getUseCustomMajor()),
+      customGpaBox.put('majorOverrides_$username', getMajorOverrides()),
+      customGpaBox.put(
+          'recommendGpaRule_$username', getRecommendGpaRule().toMap()),
     ]);
   }
 
@@ -407,6 +424,11 @@ class DatabaseHelper {
           ? <String, double>{}
           : Map<String, double>.from(weightedRaw.map((key, value) =>
               MapEntry(key.toString(), (value as num).toDouble()))),
+      useCustomMajor: customGpaBox.get('useCustomMajor_$username') ?? false,
+      majorOverrides: Map<String, bool>.from(
+          customGpaBox.get('majorOverrides_$username') ?? {}),
+      recommendGpaRule: RecommendGpaRule.fromMap(
+          customGpaBox.get('recommendGpaRule_$username') as Map?),
     );
   }
 
@@ -419,6 +441,9 @@ class DatabaseHelper {
       flowBox.delete('${kFlowListUpdateTime}_$username'),
       customGpaBox.delete('selectList_$username'),
       customGpaBox.delete('weightedGpa_$username'),
+      customGpaBox.delete('useCustomMajor_$username'),
+      customGpaBox.delete('majorOverrides_$username'),
+      customGpaBox.delete('recommendGpaRule_$username'),
     ]);
   }
 
@@ -489,6 +514,35 @@ class DatabaseHelper {
   Future<void> setWeightedGpa(Map<String, double> weightedMap) async {
     await customGpaBox.put('weightedGpa', weightedMap);
   }
+
+  // —— 主修课程来源与推免绩点规则（按账号归档）——
+
+  /// 主修课程来源：false 为官网，true 为自定义
+  bool getUseCustomMajor() {
+    return customGpaBox.get('useCustomMajor') ?? false;
+  }
+
+  Future<void> setUseCustomMajor(bool value) async {
+    await customGpaBox.put('useCustomMajor', value);
+  }
+
+  /// 自定义主修覆盖表：key 为 grade.id，true 计入、false 排除，无记录跟随官网
+  Map<String, bool> getMajorOverrides() {
+    return Map<String, bool>.from(customGpaBox.get('majorOverrides') ?? {});
+  }
+
+  Future<void> setMajorOverrides(Map<String, bool> overrides) async {
+    await customGpaBox.put('majorOverrides', overrides);
+  }
+
+  RecommendGpaRule getRecommendGpaRule() {
+    return RecommendGpaRule.fromMap(
+        customGpaBox.get('recommendGpaRule') as Map?);
+  }
+
+  Future<void> setRecommendGpaRule(RecommendGpaRule rule) async {
+    await customGpaBox.put('recommendGpaRule', rule.toMap());
+  }
 }
 
 /// 一个非活跃账号的归档档案快照。scholar 为空表示该账号从未归档过（新添账号）
@@ -500,6 +554,9 @@ class ArchivedProfile {
   final DateTime flowListUpdateTime;
   final Map<String, bool> customGpa;
   final Map<String, double> weightedGpa;
+  final bool useCustomMajor;
+  final Map<String, bool> majorOverrides;
+  final RecommendGpaRule recommendGpaRule;
 
   ArchivedProfile({
     required this.scholar,
@@ -509,5 +566,8 @@ class ArchivedProfile {
     required this.flowListUpdateTime,
     required this.customGpa,
     required this.weightedGpa,
+    required this.useCustomMajor,
+    required this.majorOverrides,
+    required this.recommendGpaRule,
   });
 }

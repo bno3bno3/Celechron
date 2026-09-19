@@ -15,7 +15,9 @@ import 'credits_page.dart';
 import 'package:get/get.dart';
 import 'custom_license_page.dart';
 import 'login_page.dart';
+import 'major_course_page.dart';
 import 'option_controller.dart';
+import 'recommend_gpa_rule_page.dart';
 
 const Color _kHeaderFooterColor = CupertinoDynamicColor(
   color: Color.fromRGBO(108, 108, 108, 1.0),
@@ -133,6 +135,55 @@ class OptionPage extends StatelessWidget {
                                         CourseIdMappingEditPage()));
                           },
                         ),
+                        CupertinoListTile(
+                          title: const Text('主修课程来源'),
+                          trailing: CupertinoSlidingSegmentedControl<bool>(
+                            children: {
+                              false: Text('官网',
+                                  style: CupertinoTheme.of(context)
+                                      .textTheme
+                                      .textStyle
+                                      .copyWith(fontSize: 16)),
+                              true: Text('自定义',
+                                  style: CupertinoTheme.of(context)
+                                      .textTheme
+                                      .textStyle
+                                      .copyWith(fontSize: 16)),
+                            },
+                            groupValue: _optionController.useCustomMajor.value,
+                            onValueChanged: (value) {
+                              _optionController.setUseCustomMajor(value!);
+                            },
+                          ),
+                        ),
+                        CupertinoListTile(
+                          title: const Text('自定义主修课程'),
+                          trailing: const BackChervonRow(),
+                          onTap: () async {
+                            Navigator.of(context, rootNavigator: true).push(
+                                CupertinoPageRoute(
+                                    builder: (context) =>
+                                        const MajorCoursePage()));
+                          },
+                        ),
+                        CupertinoListTile(
+                          title: const Text('推免绩点规则'),
+                          trailing: const BackChervonRow(),
+                          onTap: () async {
+                            Navigator.of(context, rootNavigator: true).push(
+                                CupertinoPageRoute(
+                                    builder: (context) =>
+                                        const RecommendGpaRulePage()));
+                          },
+                        ),
+                        CupertinoListTile(
+                            title: const Text('“五分制”显示推免绩点'),
+                            trailing: Obx(() => CupertinoSwitch(
+                                  value: _optionController.showRecommendGpa,
+                                  onChanged: (value) async {
+                                    _optionController.showRecommendGpa = value;
+                                  },
+                                ))),
                         CupertinoListTile(
                             title: const Text('异步刷新'),
                             trailing: Obx(() => CupertinoSwitch(

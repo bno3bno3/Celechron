@@ -254,7 +254,8 @@ class ScholarPage extends StatelessWidget {
                                       child: Obx(() => TwoLineCard(
                                           title: '主修均绩',
                                           content: maskGPA(_scholarController
-                                              .scholar.majorGpaAndCredit[0]
+                                              .scholar
+                                              .effectiveMajorGpaAndCredit[0]
                                               .toStringAsFixed(2)),
                                           backgroundColor:
                                               CustomCupertinoDynamicColors
@@ -265,7 +266,8 @@ class ScholarPage extends StatelessWidget {
                                       child: Obx(() => TwoLineCard(
                                           title: '主修学分',
                                           content: maskGPA(_scholarController
-                                              .scholar.majorGpaAndCredit[1]
+                                              .scholar
+                                              .effectiveMajorGpaAndCredit[1]
                                               .toStringAsFixed(1)),
                                           backgroundColor:
                                               CustomCupertinoDynamicColors

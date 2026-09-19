@@ -33,6 +33,7 @@ class Option {
   RxList<CourseIdMap> courseIdMappingList;
   RxBool hideHomeGpa;
   RxBool asyncRefresh;
+  RxBool showRecommendGpa;
 
   Option({
     required this.workTime,
@@ -45,5 +46,6 @@ class Option {
     required this.courseIdMappingList,
     required this.hideHomeGpa,
     required this.asyncRefresh,
+    required this.showRecommendGpa,
   });
 }
